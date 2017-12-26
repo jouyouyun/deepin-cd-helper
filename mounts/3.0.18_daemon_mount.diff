@@ -1,0 +1,175 @@
+diff --git a/mounts/cd_wrapper.go b/mounts/cd_wrapper.go
+new file mode 100644
+index 00000000..b57afec3
+--- /dev/null
++++ b/mounts/cd_wrapper.go
+@@ -0,0 +1,102 @@
++package mounts
++
++import (
++	"path"
++	"pkg.deepin.io/lib/dbus"
++)
++
++const (
++	cdDBusDest = "com.deepin.helper.CD"
++	cdDBusPath = "/com/deepin/helper/CD"
++)
++
++var _conn *dbus.Conn
++
++func initSystemBus() error {
++	if _conn == nil {
++		conn, err := dbus.SystemBus()
++		if err != nil {
++			logger.Warning("Failed to connect dbus:", err)
++			return err
++		}
++		_conn = conn
++	}
++	return nil
++}
++
++func (m *Manager) listenCD() {
++	err := initSystemBus()
++	if err != nil {
++		return
++	}
++
++	addRule := "type=signal" + ",path=" + cdDBusPath + ",member=Added"
++	removeRule := "type=signal" + ",path=" + cdDBusPath + ",member=Removed"
++	_conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, addRule)
++	_conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, removeRule)
++
++	sigChan := _conn.Signal()
++	for s := range sigChan {
++		logger.Debug("CD signal:", s.Name)
++		if s.Name == cdDBusDest+".Added" {
++			// added
++			if len(s.Body) != 1 {
++				continue
++			}
++			v := s.Body[0].([]interface{})
++			logger.Debug("CD added:", v[0].(string), v[1].(string), v[2].(string), v[3].(uint64))
++			m.refreshDiskList()
++			dbus.Emit(m, "Changed", EventTypeMountAdded, v[0].(string))
++		} else if s.Name == cdDBusDest+".Removed" {
++			// removed
++			if len(s.Body) != 1 {
++				continue
++			}
++			v := s.Body[0].([]interface{})
++			logger.Debug("CD removed:", v[0].(string), v[1].(string), v[2].(string), v[3].(uint64))
++			m.refreshDiskList()
++			dbus.Emit(m, "Changed", EventTypeMountRemoved, v[0].(string))
++		}
++	}
++}
++
++func getCDList(conn *dbus.Conn) DiskInfos {
++	if conn == nil {
++		err := initSystemBus()
++		if err != nil {
++			logger.Warning("Failed to get system bus again:", err)
++			return nil
++		}
++		conn = _conn
++	}
++
++	cd := conn.Object(cdDBusDest, cdDBusPath)
++	var r dbus.Variant
++	err := cd.Call("org.freedesktop.DBus.Properties.Get",
++		0, cdDBusDest, "List").Store(&r)
++	if err != nil {
++		logger.Warning("Failed to get list:", err)
++		return nil
++	}
++	if r.Signature().String() != "a(ssst)" {
++		logger.Warning("Invalid list data:", r.Signature().String())
++		return nil
++	}
++
++	var infos DiskInfos
++	values := r.Value().([][]interface{})
++	for _, value := range values {
++		info := DiskInfo{
++			Id:         value[0].(string),
++			Type:       DiskTypeDVD,
++			Path:       value[1].(string),
++			MountPoint: "file://" + value[2].(string),
++			CanUnmount: true,
++			CanEject:   true,
++			Total:      value[3].(uint64),
++		}
++		info.Name = path.Base(info.Id)
++		infos = infos.add(&info)
++	}
++	return infos
++}
+diff --git a/mounts/list.go b/mounts/list.go
+index 089028a2..31c5b799 100644
+--- a/mounts/list.go
++++ b/mounts/list.go
+@@ -82,6 +82,11 @@ func (m *Manager) getDiskInfos() DiskInfos {
+ 		infos = infos.add(info)
+ 	}
+ 
++	// for loongson 32bit
++	for _, info := range getCDList(_conn) {
++		infos = infos.add(info)
++	}
++
+ 	return infos
+ }
+ 
+@@ -227,8 +232,10 @@ func newDiskInfoFromMount(mount *gio.Mount) *DiskInfo {
+ 	}
+ 
+ 	gicon := mount.GetIcon()
+-	info.Icon = getIconFromGIcon(gicon)
+-	gicon.Unref()
++	if gicon != nil && gicon.Object.C != nil {
++		info.Icon = getIconFromGIcon(gicon)
++		gicon.Unref()
++	}
+ 
+ 	info.correctDiskType()
+ 	if info.Type != DiskTypeNetwork {
+@@ -256,8 +263,10 @@ func newDiskInfoFromVolume(volume *gio.Volume) *DiskInfo {
+ 	}
+ 
+ 	gicon := volume.GetIcon()
+-	info.Icon = getIconFromGIcon(gicon)
+-	gicon.Unref()
++	if gicon != nil && gicon.Object.C != nil {
++		info.Icon = getIconFromGIcon(gicon)
++		gicon.Unref()
++	}
+ 
+ 	info.correctDiskType()
+ 	return info
+diff --git a/mounts/monitor.go b/mounts/monitor.go
+index 2dafff71..338adf70 100644
+--- a/mounts/monitor.go
++++ b/mounts/monitor.go
+@@ -18,6 +18,8 @@ import (
+ )
+ 
+ func (m *Manager) handleEvent() {
++	go m.listenCD()
++
+ 	m.monitor.Connect("volume-added", func(monitor *gio.VolumeMonitor,
+ 		volume *gio.Volume) {
+ 		soundutils.PlaySystemSound(soundutils.EventDevicePlug,
+diff --git a/mounts/mounts.go b/mounts/mounts.go
+index 1a8c6110..98719858 100644
+--- a/mounts/mounts.go
++++ b/mounts/mounts.go
+@@ -22,6 +22,7 @@ var (
+ 
+ func init() {
+ 	loader.Register(NewDaemon(logger))
++	initSystemBus()
+ }
+ 
+ type Daemon struct {

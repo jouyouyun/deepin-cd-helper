@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=com.deepin.helper.CD
+Exec=/usr/bin/deepin-cd-helper
+User=root

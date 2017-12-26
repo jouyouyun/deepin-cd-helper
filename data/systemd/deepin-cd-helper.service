@@ -1,0 +1,12 @@
+[Unit]
+Description=Deepin CD Helper
+After=udisks2.service
+
+[Service]
+Type=dbus
+BusName=com.deepin.helper.CD
+ExecStart=/usr/bin/deepin-cd-helper
+KillSignal=SIGINT
+
+[Install]
+WantedBy=graphical.target
