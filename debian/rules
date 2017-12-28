@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+
+export GOPATH := /usr/share/gocode
+
+%:
+	dh $@
+
+ifdef USE_GCCGO
+override_dh_strip:
+	true
+override_dh_auto_test:
+	true
+endif

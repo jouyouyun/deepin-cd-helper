@@ -1,0 +1,14 @@
+Source: deepin-cd-helper
+Section: devel
+Priority: extra
+Maintainer: Deepin Packages Builder <packages@deepin.com>
+Build-Depends: debhelper (>= 9), golang-go, golang-dlib-dev, libglib2.0-dev, dde-go-dbus-factory
+Standards-Version: 3.9.8
+Homepage: http://www.deepin.org
+
+Package: deepin-cd-helper
+Architecture: any
+Depends: ${shlibs:Depends},
+ ${misc:Depends},
+Description: Deepin CD Helper
+ Fix the loogson 32bit cd-rom read error.

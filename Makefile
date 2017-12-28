@@ -1,5 +1,7 @@
 CC = gcc
 TARGET = deepin-cd-helper
+DESTDIR = debian/tmp/
+PREFIX = /usr
 
 ifndef USE_GCCGO
 	GOLDFLAGS = -ldflags '-s -w'
